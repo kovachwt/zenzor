@@ -5,10 +5,10 @@
 #include <SoftwareSerial.h>
 
 
-#define WLAN_SSID       "KIKA"
+#define WLAN_SSID       "gik0"
 #define WLAN_PASS       ""
 
-#define MQTT_SERVER      "192.168.88.2"
+#define MQTT_SERVER      "192.168.1.2"
 #define MQTT_SERVERPORT  1883                   // use 8883 for SSL
 #define MQTT_USERNAME    ""
 #define MQTT_KEY         ""
@@ -16,8 +16,8 @@
 WiFiClient client;
 Adafruit_MQTT_Client mqtt(&client, MQTT_SERVER, MQTT_SERVERPORT, MQTT_USERNAME, MQTT_USERNAME, MQTT_KEY);
 
-Adafruit_MQTT_Publish feedHumid = Adafruit_MQTT_Publish(&mqtt, "k0doma/vlazhnost");
-Adafruit_MQTT_Publish feedTemp = Adafruit_MQTT_Publish(&mqtt, "k0doma/toplina");
+Adafruit_MQTT_Publish feedHumid = Adafruit_MQTT_Publish(&mqtt, "k0doma/humid");
+Adafruit_MQTT_Publish feedTemp = Adafruit_MQTT_Publish(&mqtt, "k0doma/temp");
 Adafruit_MQTT_Publish feedGas = Adafruit_MQTT_Publish(&mqtt, "k0doma/combustible");
 Adafruit_MQTT_Publish feedVoc = Adafruit_MQTT_Publish(&mqtt, "k0doma/volatile");
 
@@ -51,7 +51,7 @@ void setup() {
 }
 
 int loopsForPing = 0;
-const int avgLoops = 60;
+const int avgLoops = 30;
 float temps[avgLoops];
 float humids[avgLoops];
 float gass[avgLoops];
@@ -108,10 +108,13 @@ void loop() {
   Serial.println(voc);
   gass[looper] = gas;
   vocs[looper] = voc;
+  prevGas = gas;
+  prevVoc = voc;
   
   looper++;
   if (looper == avgLoops) {
     if (mqttconnected) {
+      Serial.println("Sending data to MQTT...");
       feedTemp.publish(getaverage(temps));
       feedHumid.publish(getaverage(humids));
       feedGas.publish(getaverage(gass));
@@ -121,9 +124,11 @@ void loop() {
   }
 
   // ping the server to keep the mqtt connection alive
-  if (loopsForPing > 30) {
-    if(!mqtt.ping())
+  if (loopsForPing > 15) {
+    if(!mqtt.ping()) {
+      Serial.println("MQTT ping failed, disconnecting...");
       mqtt.disconnect();
+    }
     loopsForPing = 0;
   }
   loopsForPing++;
@@ -157,16 +162,17 @@ bool MQTT_connect() {
 
   Serial.print("Connecting to MQTT... ");
 
-  uint8_t retries = 5; // retry for one minute
+  uint8_t retries = 24; // retry for two minutes
   while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
     Serial.println(mqtt.connectErrorString(ret));
     Serial.println("Retrying MQTT connection in 5 seconds...");
     mqtt.disconnect();
     
-    delay(1000);  // wait 1 second
+    delay(5000);  // wait 5 seconds
     retries--;
     if (retries == 0) {
-      return false;
+      // reset ourselves
+      ESP.restart();
     }
   }
   Serial.println("MQTT Connected!");
