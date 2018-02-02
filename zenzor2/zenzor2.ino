@@ -51,7 +51,8 @@ void setup() {
 }
 
 int loopsForPing = 0;
-const int avgLoops = 30;
+const int maxPingLoops = 15;
+const int avgLoops = 10;
 float temps[avgLoops];
 float humids[avgLoops];
 float gass[avgLoops];
@@ -72,10 +73,12 @@ void loop() {
   humids[looper] = h;
   temps[looper] = t;
 
-  Serial.print("H=");
+  dbg_printf("H=%f", h);
+  dbg_printf("T=%f", t);
+  /*Serial.print("H=");
   Serial.println(h);
   Serial.print("T=");
-  Serial.println(t);
+  Serial.println(t);*/
 
   float gas = prevGas;
   float voc = prevVoc;
@@ -86,15 +89,17 @@ void loop() {
   if (lidx > -1) {
     String line1 = line.substring(0, lidx);
     line1.trim();
-    Serial.print("L1= ");
-    Serial.println(line1);
+    dbg_printf("L1= %s", line1.c_str());
+    /*Serial.print("L1= ");
+    Serial.println(line1);*/
 
     int l2idx = line.indexOf('\n', lidx+1);
     if (l2idx > lidx) {
       String line2 = line.substring(lidx+1, l2idx);
       line2.trim();
-      Serial.print("L2= ");
-      Serial.println(line2);
+      dbg_printf("L2= %s", line2.c_str());
+      /*Serial.print("L2= ");
+      Serial.println(line2);*/
 
       if (line1.charAt(0) == 'G')
         parseGasVoc(line1, line2, &gas, &voc);
@@ -102,10 +107,13 @@ void loop() {
         parseGasVoc(line2, line1, &gas, &voc);
     }
   }
+  dbg_printf("G=%f", gas);
+  dbg_printf("V=%f", voc);
+  /*
   Serial.print("G=");
   Serial.println(gas);
   Serial.print("V=");
-  Serial.println(voc);
+  Serial.println(voc);*/
   gass[looper] = gas;
   vocs[looper] = voc;
   prevGas = gas;
@@ -114,7 +122,7 @@ void loop() {
   looper++;
   if (looper == avgLoops) {
     if (mqttconnected) {
-      Serial.println("Sending data to MQTT...");
+      dbg_printf("Sending data to MQTT...");
       feedTemp.publish(getaverage(temps));
       feedHumid.publish(getaverage(humids));
       feedGas.publish(getaverage(gass));
@@ -124,9 +132,9 @@ void loop() {
   }
 
   // ping the server to keep the mqtt connection alive
-  if (loopsForPing > 15) {
+  if (loopsForPing > maxPingLoops) {
     if(!mqtt.ping()) {
-      Serial.println("MQTT ping failed, disconnecting...");
+      dbg_printf("MQTT ping failed, disconnecting...");
       mqtt.disconnect();
     }
     loopsForPing = 0;
@@ -160,13 +168,15 @@ bool MQTT_connect() {
     return true;
   }
 
-  Serial.print("Connecting to MQTT... ");
+  dbg_printf("Connecting to MQTT... ");
 
-  uint8_t retries = 24; // retry for two minutes
+  uint8_t retries = 12; // retry for a minute
   while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
     Serial.println(mqtt.connectErrorString(ret));
     Serial.println("Retrying MQTT connection in 5 seconds...");
     mqtt.disconnect();
+
+    reconnectWiFi();
     
     delay(5000);  // wait 5 seconds
     retries--;
@@ -193,3 +203,60 @@ float getaverage(float *floats)  // assuming array is int.
   return  sum / avgLoops;
 }
 
+
+void dbg_printf ( const char *format, ... )
+{
+    static char sbuf[1400];                                                     // For debug lines
+    va_list varArgs;                                                            // For variable number of params
+
+    va_start ( varArgs, format );                                               // Prepare parameters
+    vsnprintf ( sbuf, sizeof ( sbuf ), format, varArgs );                       // Format the message
+    va_end ( varArgs );                                                         // End of using parameters
+
+    Serial.println ( sbuf );
+}
+
+void reconnectWiFi () {
+  dbg_printf ("[WiFi] Status %d, %s - Reconnecting...\n", WiFi.status(), connectionStatus( WiFi.status() ).c_str() );
+  if( WiFi.status() == 0 ) {
+    connectWiFi();
+  }
+}
+
+void connectWiFi () {
+  dbg_printf ("[WiFi] Connecting...\n", WLAN_SSID);
+  WiFi.begin(WLAN_SSID, WLAN_PASS);
+  int connRes = WiFi.waitForConnectResult();
+  if (connRes != WL_CONNECTED) {
+    dbg_printf ("[WiFi] Connection to %s failed - Status %d, %s, Retrying in 10s...\n", WiFi.SSID().c_str(), WiFi.status(), connectionStatus( WiFi.status() ).c_str() );
+    WiFi.disconnect();
+    //ESP.restart();
+  } else {
+    dbg_printf ("[WiFi] Connected to %s, IP address: %s \n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str() );
+  } 
+}
+
+String connectionStatus ( int which )
+{
+    switch ( which )
+    {
+        case WL_CONNECTED:
+            return "Connected";
+            break;
+        case WL_NO_SSID_AVAIL:
+            return "Network not availible";
+            break;
+        case WL_CONNECT_FAILED:
+            return "Wrong password";
+            break;
+        case WL_IDLE_STATUS:
+            return "Idle status";
+            break;
+        case WL_DISCONNECTED:
+            return "Disconnected";
+            break;
+        default:
+            return "Unknown";
+            break;
+    }
+}
