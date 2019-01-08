@@ -51,8 +51,8 @@ void setup() {
 }
 
 int loopsForPing = 0;
-const int maxPingLoops = 15;
-const int avgLoops = 10;
+const int maxPingLoops = 10;
+const int avgLoops = 5;
 float temps[avgLoops];
 float humids[avgLoops];
 float gass[avgLoops];
@@ -64,11 +64,12 @@ float prevVoc = 0;
 void loop() {
   bool mqttconnected = MQTT_connect();
 
+  delay(2000);
   float h = dht.readHumidity();
   float t = dht.readTemperature();
 
-  if (isnan(h) || isnan(t))
-    ESP.restart();
+  //if (isnan(h) || isnan(t))
+  //  ESP.restart();
 
   humids[looper] = h;
   temps[looper] = t;
@@ -123,10 +124,18 @@ void loop() {
   if (looper == avgLoops) {
     if (mqttconnected) {
       dbg_printf("Sending data to MQTT...");
-      feedTemp.publish(getaverage(temps));
-      feedHumid.publish(getaverage(humids));
-      feedGas.publish(getaverage(gass));
-      feedVoc.publish(getaverage(vocs));
+      float avg = getaverage(temps);
+      if (!isnan(avg))
+        feedTemp.publish(avg);
+      avg = getaverage(humids);
+      if (!isnan(avg))
+        feedHumid.publish(avg);
+      avg = getaverage(gass);
+      if (!isnan(avg))
+        feedGas.publish(avg);
+      avg = getaverage(vocs);
+      if (!isnan(avg))
+        feedVoc.publish(avg);
     }
     looper = 0;
   }
@@ -170,7 +179,7 @@ bool MQTT_connect() {
 
   dbg_printf("Connecting to MQTT... ");
 
-  uint8_t retries = 12; // retry for a minute
+  uint8_t retries = 6; // retry for 30 seconds
   while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
     Serial.println(mqtt.connectErrorString(ret));
     Serial.println("Retrying MQTT connection in 5 seconds...");
